@@ -54,6 +54,12 @@ def generate_launch_description():
         package='rviz2',
         executable='rviz2',
         arguments=['-d', rviz_cfg],
+        # RViz needs the same clock as everything it displays. Without this it
+        # runs on wall time while every publisher here stamps sim time, so each
+        # message arrives ~56 years old: the TF buffer rejects the transforms and
+        # every display silently shows nothing. It only became visible once the
+        # stack started passing use_sim_time:=true (scripts/launch_test.sh).
+        parameters=[{'use_sim_time': use_sim_time}],
         condition=IfCondition(rviz_use)
     )
     # FAST-LIO publishes everything (point cloud, odometry, path, its own TF)

@@ -57,6 +57,7 @@
 #include <sensor_msgs/msg/imu.hpp>
 #include <std_srvs/srv/trigger.hpp>
 #include <tf2_ros/transform_broadcaster.h>
+#include <tf2_ros/buffer.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
 #include <livox_ros_driver2/msg/custom_msg.hpp>
@@ -624,6 +625,16 @@ void set_posestamp(T & out)
     out.pose.orientation.w = geoQuat.w;
     
 }
+template<typename T>
+void set_velocity(T & out)
+{
+    tf2::Transform glo2body(tf2::Quaternion(-geoQuat.x,-geoQuat.y,-geoQuat.z,geoQuat.w));
+    tf2::Vector3 vel_glo(state_point.vel(0),state_point.vel(1),state_point.vel(2));
+    tf2::Vector3 vel_body = glo2body * vel_glo;
+    out.x = vel_body.getX();
+    out.y = vel_body.getY();
+    out.z = vel_body.getZ();
+}
 
 void publish_odometry(const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubOdomAftMapped, std::unique_ptr<tf2_ros::TransformBroadcaster> & tf_br)
 {
@@ -631,18 +642,58 @@ void publish_odometry(const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPt
     odomAftMapped.child_frame_id = "body";
     odomAftMapped.header.stamp = get_ros_time(lidar_end_time);
     set_posestamp(odomAftMapped.pose);
-    pubOdomAftMapped->publish(odomAftMapped);
+    set_velocity(odomAftMapped.twist.twist.linear);
+    // pubOdomAftMapped->publish(odomAftMapped);
     auto P = kf.get_P();
+    // nav_msgs/Odometry.pose.covariance is a row-major 6x6 ordered
+    // [x y z rx ry rz], which is already the filter state's own order (pos 0-2,
+    // rot 3-5), so this is a straight copy. Upstream remapped the indices here,
+    // which swapped the position and orientation blocks — the PX4 bridge then
+    // read FAST-LIO's *orientation* variance as its position variance and vice
+    // versa. Upstream also filled this AFTER publish(), so every message carried
+    // the previous scan's covariance (and the first carried none).
     for (int i = 0; i < 6; i ++)
     {
-        int k = i < 3 ? i + 3 : i - 3;
-        odomAftMapped.pose.covariance[i*6 + 0] = P(k, 3);
-        odomAftMapped.pose.covariance[i*6 + 1] = P(k, 4);
-        odomAftMapped.pose.covariance[i*6 + 2] = P(k, 5);
-        odomAftMapped.pose.covariance[i*6 + 3] = P(k, 0);
-        odomAftMapped.pose.covariance[i*6 + 4] = P(k, 1);
-        odomAftMapped.pose.covariance[i*6 + 5] = P(k, 2);
+        for (int j = 0; j < 6; j ++)
+        {
+            odomAftMapped.pose.covariance[i*6 + j] = P(i, j);
+        }
     }
+    // for (int i = 0; i < 6; i ++)
+    // {
+    //     int k = i < 3 ? i + 3 : i - 3;
+    //     odomAftMapped.pose.covariance[i*6 + 0] = P(k, 3);
+    //     odomAftMapped.pose.covariance[i*6 + 1] = P(k, 4);
+    //     odomAftMapped.pose.covariance[i*6 + 2] = P(k, 5);
+    //     odomAftMapped.pose.covariance[i*6 + 3] = P(k, 0);
+    //     odomAftMapped.pose.covariance[i*6 + 4] = P(k, 1);
+    //     odomAftMapped.pose.covariance[i*6 + 5] = P(k, 2);
+    // }
+
+
+
+    // Velocity. Upstream never populated twist at all, leaving it all-zero —
+    // anything fusing it (e.g. the PX4 bridge's --fuse-velocity, feeding
+    // EKF2_EV_CTRL's velocity bit) would have been told the vehicle is
+    // permanently stationary. The state's vel is in the world (camera_init)
+    // frame, but twist is defined in child_frame_id ("body"), so rotate it in.
+    // Error-state index 12-14 is vel; see use-ikfom.hpp's manifold order
+    // (pos 0-2, rot 3-5, offset_R 6-8, offset_T 9-11, vel 12-14, bg, ba, grav).
+    // V3D vel_body = state_point.rot.conjugate() * state_point.vel;
+    // odomAftMapped.twist.twist.linear.x = vel_body(0);
+    // odomAftMapped.twist.twist.linear.y = vel_body(1);
+    // odomAftMapped.twist.twist.linear.z = vel_body(2);
+    // Angular velocity stays zero: body rates are not a filter state (only the
+    // gyro bias is), and EKF2 does not fuse angular rate from external vision,
+    // so nothing downstream consumes it.
+    for (int i = 0; i < 3; i ++)
+    {
+        for (int j = 0; j < 3; j ++)
+        {
+            odomAftMapped.twist.covariance[i*6 + j] = P(12 + i, 12 + j);
+        }
+    }
+    pubOdomAftMapped->publish(odomAftMapped);
 
     geometry_msgs::msg::TransformStamped trans;
     trans.header.frame_id = "camera_init";
