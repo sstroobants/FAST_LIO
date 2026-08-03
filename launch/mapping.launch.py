@@ -81,7 +81,7 @@ def generate_launch_description():
         name='level_init_tf',
         arguments=[
             '--x', '0', '--y', '0', '--z', '0',
-            '--qx', '0', '--qy', '0.25881904510252074',
+            '--qx', '0', '--qy', '-0.25881904510252074',
             '--qz', '0', '--qw', '0.96592582628906831',
             '--frame-id', 'level_init', '--child-frame-id', 'camera_init',
         ],
@@ -107,7 +107,7 @@ def generate_launch_description():
         name='vehicle_body_tf',
         arguments=[
             '--x', '0', '--y', '0', '--z', '0',
-            '--qx', '0', '--qy', '-0.25881904510252074',
+            '--qx', '0', '--qy', '0.25881904510252074',
             '--qz', '0', '--qw', '0.96592582628906831',
             '--frame-id', 'body', '--child-frame-id', 'vehicle_body',
         ],

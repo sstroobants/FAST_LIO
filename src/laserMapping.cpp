@@ -659,30 +659,7 @@ void publish_odometry(const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPt
             odomAftMapped.pose.covariance[i*6 + j] = P(i, j);
         }
     }
-    // for (int i = 0; i < 6; i ++)
-    // {
-    //     int k = i < 3 ? i + 3 : i - 3;
-    //     odomAftMapped.pose.covariance[i*6 + 0] = P(k, 3);
-    //     odomAftMapped.pose.covariance[i*6 + 1] = P(k, 4);
-    //     odomAftMapped.pose.covariance[i*6 + 2] = P(k, 5);
-    //     odomAftMapped.pose.covariance[i*6 + 3] = P(k, 0);
-    //     odomAftMapped.pose.covariance[i*6 + 4] = P(k, 1);
-    //     odomAftMapped.pose.covariance[i*6 + 5] = P(k, 2);
-    // }
 
-
-
-    // Velocity. Upstream never populated twist at all, leaving it all-zero —
-    // anything fusing it (e.g. the PX4 bridge's --fuse-velocity, feeding
-    // EKF2_EV_CTRL's velocity bit) would have been told the vehicle is
-    // permanently stationary. The state's vel is in the world (camera_init)
-    // frame, but twist is defined in child_frame_id ("body"), so rotate it in.
-    // Error-state index 12-14 is vel; see use-ikfom.hpp's manifold order
-    // (pos 0-2, rot 3-5, offset_R 6-8, offset_T 9-11, vel 12-14, bg, ba, grav).
-    // V3D vel_body = state_point.rot.conjugate() * state_point.vel;
-    // odomAftMapped.twist.twist.linear.x = vel_body(0);
-    // odomAftMapped.twist.twist.linear.y = vel_body(1);
-    // odomAftMapped.twist.twist.linear.z = vel_body(2);
     // Angular velocity stays zero: body rates are not a filter state (only the
     // gyro bias is), and EKF2 does not fuse angular rate from external vision,
     // so nothing downstream consumes it.
