@@ -648,7 +648,7 @@ void publish_odometry(const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPt
     // nav_msgs/Odometry.pose.covariance is a row-major 6x6 ordered
     // [x y z rx ry rz], which is already the filter state's own order (pos 0-2,
     // rot 3-5), so this is a straight copy. Upstream remapped the indices here,
-    // which swapped the position and orientation blocks — the PX4 bridge then
+    // which swapped the position and orientation blocks — the PX4 bridge then`
     // read FAST-LIO's *orientation* variance as its position variance and vice
     // versa. Upstream also filled this AFTER publish(), so every message carried
     // the previous scan's covariance (and the first carried none).
@@ -660,6 +660,15 @@ void publish_odometry(const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPt
         }
     }
 
+    // Velocity covariance: error-state index 12-14 is vel (see the manifold
+    // order in use-ikfom.hpp). That block is the covariance of state_point.vel,
+    // which is in the world (camera_init) frame — but set_velocity() above
+    // rotates the twist itself into child_frame_id ("body"), so the raw block
+    // would describe a different frame than the numbers it belongs to. Rotate
+    // it with the same transform: C_body = R^T C_world R.
+    const M3D R_body_to_world = state_point.rot.toRotationMatrix();
+    const M3D vel_cov_body =
+        R_body_to_world.transpose() * P.block<3, 3>(12, 12) * R_body_to_world;
     // Angular velocity stays zero: body rates are not a filter state (only the
     // gyro bias is), and EKF2 does not fuse angular rate from external vision,
     // so nothing downstream consumes it.
@@ -667,7 +676,8 @@ void publish_odometry(const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPt
     {
         for (int j = 0; j < 3; j ++)
         {
-            odomAftMapped.twist.covariance[i*6 + j] = P(12 + i, 12 + j);
+            odomAftMapped.twist.covariance[i*6 + j] = vel_cov_body(i, j);
+            // odomAftMapped.twist.covariance[i*6 + j] = P(12 + i, 12 + j);
         }
     }
     pubOdomAftMapped->publish(odomAftMapped);
